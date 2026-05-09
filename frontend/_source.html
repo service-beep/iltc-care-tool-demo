@@ -265,22 +265,123 @@ window.fetch = async function(input, init) {
   return _origFetch(input, init);
 };
 
-// ========== 展場橫幅（持續顯示，含「重置體驗」按鈕） ==========
+// ========== 展場橫幅 + 浮動體驗指南 + 首次歡迎導覽 ==========
+const DEMO_GUIDE_ITEMS = [
+  { tab: '用藥', emoji: '💊', title: '拍藥袋自動辨識', desc: '點綠色「📷 拍藥袋自動辨識」按鈕 → AI 會在 1.5 秒內辨識並列出 3 種藥讓你確認新增' },
+  { tab: '看診', emoji: '🎤', title: '醫囑錄音 → AI 摘要', desc: '點「新增看診」→ 點「🎤 使用範例錄音」→ 模擬錄 5 秒 → AI 自動轉逐字稿 → 點「用 AI 產生摘要」→ 結構化摘要出現' },
+  { tab: '看診', emoji: '📱', title: '一鍵分享 LINE', desc: 'AI 摘要產出後，下方有綠色「📱 一鍵分享到 LINE」按鈕，可把摘要傳給家人' },
+  { tab: '看診', emoji: '🤖', title: 'AI 整理回診提醒', desc: '看診頁底部點「AI 整理回診提醒」→ AI 根據近 30 天數值與病況產出 7 條值得問醫生的問題' },
+  { tab: '看診', emoji: '📋', title: '看歷史看診紀錄', desc: '4/15 神經內科、5/2 心臟內科兩筆紀錄，點開可看完整 AI 摘要' },
+  { tab: '數值', emoji: '📊', title: '生理數值圖表', desc: '看 30 天血壓、血糖趨勢圖；點「新增」可加入新數值' },
+  { tab: '病況', emoji: '📝', title: '病況交接日誌', desc: '看護阿嬌姐填了 3 筆紀錄；可點「新增」體驗快速勾選與描述' },
+  { tab: '摘要卡', emoji: '🆘', title: '醫療摘要卡', desc: '可列印 PDF，給急診醫護快速了解奶奶狀況（用藥、過敏、近期數值）' }
+];
+
 function injectDemoBanner() {
   if (document.getElementById('demoBanner')) return;
+
   const bar = document.createElement('div');
   bar.id = 'demoBanner';
   bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:linear-gradient(90deg,#ec4899 0%,#f59e0b 50%,#06b6d4 100%);color:white;font-size:12px;padding:6px 12px;text-align:center;font-weight:500;display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,0.1);';
-  bar.innerHTML = '<span style="white-space:nowrap;">🎪 展場體驗版　·　範例：陳美玉奶奶（82歲，高血壓+糖尿病+失智症）</span><button id="demoResetBtn" style="background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.5);color:white;padding:3px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">🔄 重新開始體驗</button>';
+  bar.innerHTML = '<span style="white-space:nowrap;">🎪 展場體驗版　·　陳美玉奶奶（82歲，高血壓+糖尿病+失智症）</span><button id="demoResetBtn" style="background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.5);color:white;padding:3px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">🔄 重新開始</button>';
   document.body.insertBefore(bar, document.body.firstChild);
   document.getElementById('demoResetBtn').onclick = () => {
     if (confirm('清空所有展場資料並重新開始體驗？')) { try { localStorage.clear(); } catch(e){} location.reload(); }
   };
-  // 把 sticky header 推到橫幅下方
+
   const style = document.createElement('style');
-  style.textContent = 'body{padding-top:32px !important;}@media print{#demoBanner{display:none !important;}body{padding-top:0 !important;}}';
+  style.textContent = `
+    body{padding-top:32px !important;}
+    @media print{#demoBanner,#demoFloatBtn,#demoGuideOverlay,#demoWelcome{display:none !important;}body{padding-top:0 !important;}}
+    @keyframes demoPulse {0%,100%{transform:scale(1);box-shadow:0 4px 14px rgba(236,72,153,0.4);}50%{transform:scale(1.05);box-shadow:0 6px 20px rgba(236,72,153,0.6);}}
+    @keyframes demoFadeIn {from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+  `;
   document.head.appendChild(style);
+
+  // 浮動「體驗指南」按鈕（右下）
+  const floatBtn = document.createElement('button');
+  floatBtn.id = 'demoFloatBtn';
+  floatBtn.innerHTML = '🎪 體驗指南';
+  floatBtn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9997;background:linear-gradient(135deg,#ec4899,#f59e0b);color:white;border:none;padding:12px 18px;border-radius:30px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(236,72,153,0.4);animation:demoPulse 2.5s ease-in-out infinite;';
+  floatBtn.onclick = showDemoGuide;
+  document.body.appendChild(floatBtn);
+
+  // 首次造訪：顯示歡迎導覽
+  try {
+    if (!localStorage.getItem('iltc_demo_welcome_seen')) {
+      setTimeout(showDemoWelcome, 600);
+    }
+  } catch (e) {}
 }
+
+function showDemoWelcome() {
+  if (document.getElementById('demoWelcome')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'demoWelcome';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,0.6);display:flex;align-items:center;justify-content:center;padding:16px;animation:demoFadeIn 0.3s ease-out;';
+  overlay.innerHTML = `
+    <div style="background:white;border-radius:20px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;padding:28px 24px;box-shadow:0 20px 50px rgba(0,0,0,0.3);">
+      <div style="font-size:24px;font-weight:800;margin-bottom:6px;background:linear-gradient(90deg,#ec4899,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">🎪 歡迎體驗醫囑管理工具</div>
+      <div style="color:#64748b;font-size:13px;margin-bottom:18px;">展場體驗版 · 你的操作不會儲存到伺服器</div>
+      <div style="background:linear-gradient(135deg,#fef3c7,#fce7f3);padding:14px 16px;border-radius:14px;margin-bottom:18px;font-size:14px;border:1px solid #fde68a;">
+        <div style="font-weight:700;margin-bottom:6px;color:#7c2d12;">👵 範例個案：陳美玉奶奶（82 歲）</div>
+        <div style="color:#475569;line-height:1.6;">慢性病：高血壓、第二型糖尿病、輕度失智症<br>已預載 30 天血壓血糖、5 種用藥、2 筆看診紀錄、AI 摘要</div>
+      </div>
+      <div style="font-weight:700;margin-bottom:10px;color:#1e293b;">✨ 標有「<span style="background:#f59e0b;color:white;padding:2px 6px;border-radius:8px;font-size:11px;">✨ 試試</span>」的按鈕都可以體驗：</div>
+      <ul style="padding-left:0;list-style:none;font-size:14px;line-height:1.7;color:#1e293b;margin:0 0 18px;">
+        <li style="padding:6px 0;border-bottom:1px solid #f1f5f9;"><strong>用藥</strong>　→ 拍藥袋自動辨識（AI 直接列出藥單）</li>
+        <li style="padding:6px 0;border-bottom:1px solid #f1f5f9;"><strong>看診</strong>　→ 醫囑錄音 + AI 摘要 + 一鍵 LINE 分享</li>
+        <li style="padding:6px 0;border-bottom:1px solid #f1f5f9;"><strong>看診</strong>　→ AI 整理回診提醒</li>
+        <li style="padding:6px 0;border-bottom:1px solid #f1f5f9;"><strong>數值/病況</strong> → 已預載 30 天紀錄</li>
+        <li style="padding:6px 0;"><strong>摘要卡</strong> → 急診用醫療摘要卡</li>
+      </ul>
+      <div style="background:#f0f9ff;padding:10px 12px;border-radius:10px;margin-bottom:16px;font-size:12px;color:#0369a1;">💡 隨時可點右下角「🎪 體驗指南」回顧體驗清單；頂端「🔄 重新開始」可重置。</div>
+      <button id="demoWelcomeClose" style="width:100%;padding:14px;background:linear-gradient(90deg,#ec4899,#f59e0b);color:white;border:none;border-radius:14px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(236,72,153,0.3);">我懂了，開始體驗 →</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('demoWelcomeClose').onclick = () => {
+    try { localStorage.setItem('iltc_demo_welcome_seen', '1'); } catch(e){}
+    overlay.remove();
+  };
+  overlay.onclick = (e) => { if (e.target === overlay) document.getElementById('demoWelcomeClose').click(); };
+}
+
+function showDemoGuide() {
+  if (document.getElementById('demoGuideOverlay')) return;
+  const itemsHtml = DEMO_GUIDE_ITEMS.map((it) =>
+    `<div style="padding:12px 14px;border-bottom:1px solid #f1f5f9;display:flex;gap:12px;align-items:flex-start;">
+      <div style="font-size:22px;flex-shrink:0;">${it.emoji}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+          <span style="background:#06b6d4;color:white;font-size:10px;padding:2px 7px;border-radius:8px;font-weight:600;">${it.tab} 分頁</span>
+          <span style="font-weight:700;font-size:14px;color:#1e293b;">${it.title}</span>
+        </div>
+        <div style="font-size:12.5px;color:#475569;line-height:1.55;">${it.desc}</div>
+      </div>
+    </div>`
+  ).join('');
+  const overlay = document.createElement('div');
+  overlay.id = 'demoGuideOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,0.55);display:flex;align-items:flex-end;justify-content:center;padding:0;animation:demoFadeIn 0.25s ease-out;';
+  overlay.innerHTML = `
+    <div style="background:white;border-radius:20px 20px 0 0;max-width:560px;width:100%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 -8px 30px rgba(0,0,0,0.2);">
+      <div style="padding:18px 20px 12px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:18px;font-weight:800;color:#1e293b;">🎪 體驗指南</div>
+          <div style="font-size:12px;color:#64748b;margin-top:2px;">陳美玉奶奶 · 8 個可體驗的功能</div>
+        </div>
+        <button id="demoGuideClose" style="background:#f1f5f9;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px;color:#64748b;">✕</button>
+      </div>
+      <div style="overflow-y:auto;flex:1;">${itemsHtml}</div>
+      <div style="padding:12px 20px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11.5px;color:#64748b;text-align:center;">所有 AI 回應為前端固定範例，為展場體驗用，不會耗用真實 API 額度</div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('demoGuideClose').onclick = () => overlay.remove();
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+}
+
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', injectDemoBanner); else injectDemoBanner();
 
 // 統一的 API 呼叫 wrapper：帶 Bearer token
@@ -1592,14 +1693,34 @@ function Medications({ lang }) {
     finally { setScanning(false); e.target.value = ''; }
   };
 
+  // 🎪 DEMO：跳過檔案上傳，直接觸發 AI 藥袋辨識體驗
+  const handleDemoScan = async () => {
+    setScanning(true);
+    try {
+      await new Promise(r => setTimeout(r, 200));
+      const text = await callAIVision(state.settings, 'demo', 'demo', '', 'image/jpeg');
+      const items = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
+      setEditing({ _scanned: items });
+    } catch (err) { alert('辨識失敗: ' + err.message); }
+    finally { setScanning(false); }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
         <Btn onClick={() => setEditing({})} className="flex-1">{t('addMed', lang)}</Btn>
-        <label className={'px-4 py-2.5 rounded-lg font-medium text-sm ' + (scanning ? 'bg-slate-300 text-slate-500' : 'bg-emerald-600 text-white hover:bg-emerald-700') + ' cursor-pointer'}>
-          {scanning ? t('scanningImage', lang) : t('scanBag', lang)}
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleScan} className="hidden" disabled={scanning} />
-        </label>
+        {(typeof DEMO_MODE !== 'undefined' && DEMO_MODE) ? (
+          <button type="button" onClick={handleDemoScan} disabled={scanning}
+            className={'relative px-4 py-2.5 rounded-lg font-medium text-sm ' + (scanning ? 'bg-slate-300 text-slate-500' : 'bg-emerald-600 text-white hover:bg-emerald-700')}>
+            {scanning ? '🔍 AI 辨識中…' : '📷 拍藥袋自動辨識'}
+            {!scanning && <span style={{position:'absolute',top:-8,right:-8,background:'#f59e0b',color:'white',fontSize:'10px',padding:'2px 6px',borderRadius:'10px',fontWeight:700,boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}}>✨ 試試</span>}
+          </button>
+        ) : (
+          <label className={'px-4 py-2.5 rounded-lg font-medium text-sm ' + (scanning ? 'bg-slate-300 text-slate-500' : 'bg-emerald-600 text-white hover:bg-emerald-700') + ' cursor-pointer'}>
+            {scanning ? t('scanningImage', lang) : t('scanBag', lang)}
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleScan} className="hidden" disabled={scanning} />
+          </label>
+        )}
       </div>
 
       {active.length > 0 && (
@@ -1918,7 +2039,26 @@ function ConsultationForm({ item, onClose, lang }) {
           <div className="col-span-2"><Label>{t('doctor', lang)}</Label><VoiceInput value={form.doctor} onChange={v => up('doctor', v)} /></div>
         </div>
         <VoiceRecorder transcription={form.transcription} onTranscriptChange={tr => up('transcription', tr)} onSummaryGenerated={s => up('aiSummary', s)} patient={state.patients.find(p => p.id === state.currentPatientId)} meds={(state.medications[state.currentPatientId] || []).filter(m => m.active)} settings={state.settings} lang={lang} />
-        {form.aiSummary && <div><Label>{t('aiSummary', lang)}</Label><VoiceTextArea rows={6} value={form.aiSummary} onChange={v => up('aiSummary', v)} /></div>}
+        {form.aiSummary && (
+          <div>
+            <Label>{t('aiSummary', lang)}</Label>
+            <VoiceTextArea rows={6} value={form.aiSummary} onChange={v => up('aiSummary', v)} />
+            <button type="button" onClick={() => {
+              const patient = state.patients.find(p => p.id === state.currentPatientId);
+              const lines = [];
+              lines.push(`【${patient?.name || ''} ${fmtDate(form.date) || ''} 看診摘要】`);
+              if (form.hospital || form.department) lines.push(`${form.hospital || ''} ${form.department || ''}${form.doctor ? ' · ' + form.doctor : ''}`);
+              lines.push('');
+              lines.push(form.aiSummary);
+              if (form.nextVisit) { lines.push(''); lines.push(`下次回診：${fmtDate(form.nextVisit)}`); }
+              lines.push(''); lines.push('—— 來自醫囑管理工具');
+              shareToLine(lines.join('\n'));
+            }} className="mt-2 w-full px-4 py-2.5 bg-[#06C755] text-white rounded-lg font-medium text-sm hover:bg-[#05B34A] flex items-center justify-center gap-2">
+              📱 一鍵分享到 LINE
+            </button>
+            <div className="mt-1.5 text-xs text-slate-500 text-center">把這份 AI 整理好的摘要直接傳給家人或照顧團隊</div>
+          </div>
+        )}
         <div><Label>{t('chiefComplaint', lang)}</Label>
           <Chips options={commonSymptoms} value={(form.chiefComplaint || '').split('、').filter(Boolean)} multi onChange={v => up('chiefComplaint', v.join('、'))} className="mb-2" />
           <VoiceTextArea rows={2} value={form.chiefComplaint} onChange={v => up('chiefComplaint', v)} />
@@ -1960,11 +2100,12 @@ function VoiceRecorder({ transcription, onTranscriptChange, onSummaryGenerated, 
 
   // 用 MediaRecorder 錄音 → 停止後送後端 Gemini 辨識（支援 iOS、Android、桌面）
   const startRec = async () => {
-    // 🎪 DEMO 模式：假裝錄音，不需真實麥克風
+    // 🎪 DEMO 模式：假裝錄音 5 秒後自動停止，不需真實麥克風
     if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) {
       setRecording(true);
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
+      setTimeout(() => stopRec(), 5000);
       return;
     }
     if (!USE_BACKEND) return alert('醫囑錄音需要平台模式');
@@ -2070,27 +2211,38 @@ function VoiceRecorder({ transcription, onTranscriptChange, onSummaryGenerated, 
     finally { setTranscribing(false); }
   };
 
+  const _isDemo = typeof DEMO_MODE !== 'undefined' && DEMO_MODE;
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="font-medium text-sm">{t('recordVoice', lang)}</div>
+        <div className="font-medium text-sm">{t('recordVoice', lang)}{_isDemo && <span style={{marginLeft:6,fontSize:11,color:'#64748b',fontWeight:400}}>（展場示範）</span>}</div>
         <div className="flex gap-2">
           {!recording && !transcribing ? (
             <>
-              <button type="button" onClick={startRec} className="px-4 py-2 bg-red-500 text-white rounded-lg font-medium text-sm hover:bg-red-600">{t('startRec', lang)}</button>
-              <label className="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-lg font-medium text-sm hover:bg-slate-50 cursor-pointer">
-                {t('uploadAudio', lang)}
-                <input type="file" accept="audio/*" onChange={handleAudioUpload} className="hidden" />
-              </label>
+              {_isDemo ? (
+                <button type="button" onClick={startRec} className="relative px-4 py-2 bg-red-500 text-white rounded-lg font-medium text-sm hover:bg-red-600">
+                  🎤 使用範例錄音
+                  <span style={{position:'absolute',top:-8,right:-8,background:'#f59e0b',color:'white',fontSize:'10px',padding:'2px 6px',borderRadius:'10px',fontWeight:700,boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}}>✨ 試試</span>
+                </button>
+              ) : (
+                <>
+                  <button type="button" onClick={startRec} className="px-4 py-2 bg-red-500 text-white rounded-lg font-medium text-sm hover:bg-red-600">{t('startRec', lang)}</button>
+                  <label className="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-lg font-medium text-sm hover:bg-slate-50 cursor-pointer">
+                    {t('uploadAudio', lang)}
+                    <input type="file" accept="audio/*" onChange={handleAudioUpload} className="hidden" />
+                  </label>
+                </>
+              )}
             </>
           ) : recording ? (
-            <button type="button" onClick={stopRec} className="px-4 py-2 recording text-white rounded-lg font-medium text-sm">{t('stopRec', lang)}（{Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')}）</button>
+            <button type="button" onClick={stopRec} className="px-4 py-2 recording text-white rounded-lg font-medium text-sm">{_isDemo ? '示範錄音中…' : t('stopRec', lang)}（{Math.floor(seconds/60)}:{String(seconds%60).padStart(2,'0')}）</button>
           ) : (
-            <span className="px-4 py-2 bg-slate-200 text-slate-600 rounded-lg text-sm">Gemini 辨識中...</span>
+            <span className="px-4 py-2 bg-slate-200 text-slate-600 rounded-lg text-sm">{_isDemo ? '🤖 AI 辨識中…' : 'Gemini 辨識中...'}</span>
           )}
         </div>
       </div>
-      {transcribing && <div className="text-xs text-slate-500">正在用 Gemini 辨識，依長度可能需要 10–60 秒...</div>}
+      {_isDemo && !recording && !transcribing && !transcription && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">💡 點「使用範例錄音」會模擬 5 秒醫囑錄音，並用 AI 自動產出逐字稿（不需開麥克風）</div>}
+      {transcribing && <div className="text-xs text-slate-500">{_isDemo ? '🎪 展場示範：模擬 Gemini 辨識中…' : '正在用 Gemini 辨識，依長度可能需要 10–60 秒...'}</div>}
       <VoiceTextArea rows={6} value={transcription} onChange={onTranscriptChange} />
       <Btn type="button" onClick={generate} disabled={generating || !transcription?.trim()} className="w-full">{generating ? t('generating', lang) : t('generateSummary', lang)}</Btn>
     </div>
