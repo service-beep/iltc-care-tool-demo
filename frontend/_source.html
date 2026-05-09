@@ -259,6 +259,32 @@ window.fetch = async function(input, init) {
       return ok({ text: _mockTranscribeResponse(), quota: { ok: true, used: 0, limit: 100 } });
     }
     if (path === '/health') return ok({ status: 'ok', mode: 'demo' });
+    // 共享/邀請（DEMO 用 localStorage 保留首次產生的 6 碼，重新產生會換新碼）
+    if (path === '/api/share/invite/create') {
+      await _delay(120);
+      let code = '';
+      try { code = localStorage.getItem('iltc_demo_invite_code') || ''; } catch (e) {}
+      if (!code) {
+        code = Math.random().toString(36).slice(2, 8).toUpperCase();
+        try { localStorage.setItem('iltc_demo_invite_code', code); } catch (e) {}
+      }
+      return ok({ ok: true, code });
+    }
+    if (path === '/api/share/invite/regenerate') {
+      await _delay(160);
+      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+      try { localStorage.setItem('iltc_demo_invite_code', code); } catch (e) {}
+      return ok({ ok: true, code });
+    }
+    if (path === '/api/share/list') {
+      await _delay(80);
+      return ok({ ok: true, shares: [], used: 0, max_caregivers: 5 });
+    }
+    if (path === '/api/share/redeem') {
+      await _delay(200);
+      return ok({ ok: true, already: false, patient_name: '陳美玉（範例）' });
+    }
+    if (path === '/api/share/remove') { await _delay(80); return ok({ ok: true }); }
     if (path.startsWith('/api/share/')) return ok({ ok: true });
     return ok({});
   }
@@ -1380,8 +1406,7 @@ function InviteShareModal({ patient, lang, onClose }) {
 
   const shareViaLine = () => {
     const text = `我邀請你一起照顧「${patient.name}」\n\n請打開醫囑管理工具 → 點頭像旁的「+ 輸入邀請碼」\n邀請碼：${code}\n\n（一個邀請碼最多 ${maxN} 位照顧者，目前 ${used + 1}/${maxN} 位）`;
-    const url = 'https://line.me/R/msg/text/?' + encodeURIComponent(text);
-    window.open(url, '_blank');
+    shareToLine(text);
   };
 
   const removeOne = async (sw) => {
@@ -2676,8 +2701,7 @@ function Settings({ profile, onLogout, lang, onLangChange }) {
         </div>
         <Btn variant="line" onClick={() => {
           const msg = `【醫囑管理工具】測試訊息 - ${fmtDateTime(now())}\n\n這是從醫囑管理工具分享過來的測試訊息，用來確認 LINE 分享功能可以正常運作。`;
-          const url = 'https://line.me/R/msg/text/?' + encodeURIComponent(msg);
-          window.open(url, '_blank');
+          shareToLine(msg);
         }} className="w-full">送出測試訊息到 LINE</Btn>
       </div>
 
