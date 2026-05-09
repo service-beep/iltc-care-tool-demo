@@ -282,22 +282,39 @@ function injectDemoBanner() {
 
   const bar = document.createElement('div');
   bar.id = 'demoBanner';
-  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:linear-gradient(90deg,#ec4899 0%,#f59e0b 50%,#06b6d4 100%);color:white;font-size:12px;padding:6px 12px;text-align:center;font-weight:500;display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,0.1);';
-  bar.innerHTML = '<span style="white-space:nowrap;">展場體驗版　·　陳美玉奶奶（82歲，高血壓、糖尿病、輕度失智症）</span><button id="demoResetBtn" style="background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.5);color:white;padding:3px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;letter-spacing:0.5px;">重新開始</button>';
+  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:linear-gradient(90deg,#ec4899 0%,#f59e0b 50%,#06b6d4 100%);color:white;padding:6px 10px;font-weight:500;display:flex;align-items:center;gap:8px;box-shadow:0 1px 4px rgba(0,0,0,0.1);';
+  bar.innerHTML = '<span id="demoBannerText" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">展場體驗版　·　陳美玉奶奶（82歲，高血壓、糖尿病、輕度失智症）</span><button id="demoResetBtn" style="flex-shrink:0;background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.5);color:white;padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;letter-spacing:1px;white-space:nowrap;">重新開始</button>';
   document.body.insertBefore(bar, document.body.firstChild);
   document.getElementById('demoResetBtn').onclick = () => {
     if (confirm('清空所有展場資料並重新開始體驗？')) { try { localStorage.clear(); } catch(e){} location.reload(); }
   };
+  // 動態追蹤 banner 高度（語言切換、字級變化都會重算），用 CSS variable 餵 body padding
+  const updateBannerHeight = () => {
+    const h = bar.offsetHeight;
+    if (h > 0) document.documentElement.style.setProperty('--demo-banner-h', h + 'px');
+  };
+  updateBannerHeight();
+  if (window.ResizeObserver) {
+    try { new ResizeObserver(updateBannerHeight).observe(bar); } catch (e) {}
+  }
+  window.addEventListener('orientationchange', () => setTimeout(updateBannerHeight, 100));
 
   const style = document.createElement('style');
   style.textContent = `
-    body{padding-top:32px !important;}
+    body{padding-top:var(--demo-banner-h,34px) !important;}
     @media print{#demoBanner,#demoFloatBtn,#demoGuideOverlay,#demoWelcome,#demoPrescriptionOverlay,#demoLineOverlay{display:none !important;}body{padding-top:0 !important;}}
     @keyframes demoPulse {0%,100%{transform:scale(1);box-shadow:0 4px 14px rgba(15,118,110,0.35);}50%{transform:scale(1.04);box-shadow:0 6px 20px rgba(15,118,110,0.5);}}
     @keyframes demoFadeIn {from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
     @keyframes demoSpin {to{transform:rotate(360deg);}}
     .demoSpinner{width:18px;height:18px;border:3px solid #e2e8f0;border-top-color:#0891b2;border-radius:50%;animation:demoSpin 0.8s linear infinite;}
-    .demoBadge{position:absolute;top:-8px;right:-8px;background:#0891b2;color:white;font-size:10px;padding:2px 7px;border-radius:10px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,0.2);letter-spacing:0.5px;}
+    .demoBadge{position:absolute;top:-8px;right:-8px;background:#ea580c;color:white;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;box-shadow:0 2px 5px rgba(234,88,12,0.45);letter-spacing:1px;line-height:1.4;}
+    body.demoLockScroll{overflow:hidden !important;touch-action:none;}
+    @media (max-width:480px){
+      #demoFloatBtn{padding:10px 16px !important;font-size:13px !important;letter-spacing:0.5px !important;}
+    }
+    @media (max-width:380px){
+      #demoBannerText{font-size:10.5px !important;}
+    }
   `;
   document.head.appendChild(style);
 
@@ -305,7 +322,7 @@ function injectDemoBanner() {
   const floatBtn = document.createElement('button');
   floatBtn.id = 'demoFloatBtn';
   floatBtn.innerHTML = '體驗指南';
-  floatBtn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9997;background:#0e7490;color:white;border:none;padding:12px 22px;border-radius:30px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(15,118,110,0.35);animation:demoPulse 2.5s ease-in-out infinite;letter-spacing:1px;';
+  floatBtn.style.cssText = 'position:fixed;bottom:calc(16px + env(safe-area-inset-bottom, 0px));right:16px;z-index:9997;background:#0e7490;color:white;border:none;padding:12px 22px;border-radius:30px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(15,118,110,0.35);animation:demoPulse 2.5s ease-in-out infinite;letter-spacing:1px;';
   floatBtn.onclick = showDemoGuide;
   document.body.appendChild(floatBtn);
 
@@ -343,11 +360,14 @@ function showDemoWelcome() {
     </div>
   `;
   document.body.appendChild(overlay);
-  document.getElementById('demoWelcomeClose').onclick = () => {
+  document.body.classList.add('demoLockScroll');
+  const close = () => {
     try { localStorage.setItem('iltc_demo_welcome_seen', '1'); } catch(e){}
     overlay.remove();
+    document.body.classList.remove('demoLockScroll');
   };
-  overlay.onclick = (e) => { if (e.target === overlay) document.getElementById('demoWelcomeClose').click(); };
+  document.getElementById('demoWelcomeClose').onclick = close;
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
 }
 
 function showDemoGuide() {
@@ -381,18 +401,21 @@ function showDemoGuide() {
     </div>
   `;
   document.body.appendChild(overlay);
-  document.getElementById('demoGuideClose').onclick = () => overlay.remove();
-  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  document.body.classList.add('demoLockScroll');
+  const close = () => { overlay.remove(); document.body.classList.remove('demoLockScroll'); };
+  document.getElementById('demoGuideClose').onclick = close;
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
 }
 
 // 藥單疊圖（拍藥袋辨識體驗時顯示一張範例藥單）
 function showDemoPrescriptionOverlay() {
   if (document.getElementById('demoPrescriptionOverlay')) return;
+  document.body.classList.add('demoLockScroll');
   const overlay = document.createElement('div');
   overlay.id = 'demoPrescriptionOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:10001;background:rgba(15,23,42,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:demoFadeIn 0.25s ease-out;';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10001;background:rgba(15,23,42,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;animation:demoFadeIn 0.25s ease-out;overflow:hidden;';
   overlay.innerHTML = `
-    <div style="background:#fefce8;border:1px solid #ca8a04;border-radius:6px;padding:18px 22px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.4);transform:rotate(-1.5deg);position:relative;font-family:-apple-system,'PingFang TC','Noto Sans TC',sans-serif;">
+    <div style="background:#fefce8;border:1px solid #ca8a04;border-radius:6px;padding:16px 18px;max-width:320px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.4);transform:rotate(-1deg);position:relative;font-family:-apple-system,'PingFang TC','Noto Sans TC',sans-serif;">
       <div style="text-align:center;border-bottom:1.5px dashed #a16207;padding-bottom:8px;margin-bottom:10px;">
         <div style="font-weight:800;font-size:17px;color:#713f12;letter-spacing:2px;">台 大 醫 院 藥 局</div>
         <div style="font-size:10px;color:#854d0e;margin-top:2px;letter-spacing:1px;">NTU HOSPITAL PHARMACY</div>
@@ -421,14 +444,16 @@ function showDemoPrescriptionOverlay() {
 function hideDemoPrescriptionOverlay() {
   const o = document.getElementById('demoPrescriptionOverlay');
   if (o) o.remove();
+  document.body.classList.remove('demoLockScroll');
 }
 
 // LINE 訊息預覽（取代真實開啟 LINE share URL，避免展場訪客連到我的 LINE）
 function showDemoLinePreview(text) {
   if (document.getElementById('demoLineOverlay')) return;
+  document.body.classList.add('demoLockScroll');
   const overlay = document.createElement('div');
   overlay.id = 'demoLineOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:10001;background:rgba(15,23,42,0.6);display:flex;align-items:center;justify-content:center;padding:16px;animation:demoFadeIn 0.25s ease-out;';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10001;background:rgba(15,23,42,0.6);display:flex;align-items:center;justify-content:center;padding:12px;animation:demoFadeIn 0.25s ease-out;';
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   overlay.innerHTML = `
     <div style="background:white;border-radius:16px;max-width:440px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,0.3);overflow:hidden;font-family:-apple-system,'PingFang TC','Noto Sans TC',sans-serif;">
@@ -452,7 +477,7 @@ function showDemoLinePreview(text) {
     </div>
   `;
   document.body.appendChild(overlay);
-  const close = () => overlay.remove();
+  const close = () => { overlay.remove(); document.body.classList.remove('demoLockScroll'); };
   document.getElementById('demoLineClose').onclick = close;
   document.getElementById('demoLineDone').onclick = close;
   document.getElementById('demoLineCopy').onclick = () => {
