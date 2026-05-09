@@ -433,6 +433,44 @@ function showDemoGuide() {
   overlay.onclick = (e) => { if (e.target === overlay) close(); };
 }
 
+// ========== 解析 AI 結構化摘要，自動填回看診表單欄位 ==========
+// AI 摘要格式：【診斷】xxx 【醫囑／處置】xxx 【下次回診】xxx 【家屬待辦】xxx 【需再確認】xxx
+function parseAISummaryToFields(text) {
+  if (!text) return {};
+  const out = {};
+  const sections = text.split(/【([^】]+)】/);
+  for (let i = 1; i < sections.length; i += 2) {
+    const key = (sections[i] || '').trim();
+    const val = (sections[i + 1] || '').trim().replace(/^[:：\s]+/, '');
+    if (!val) continue;
+    if (key.includes('診斷')) out.diagnosis = val;
+    else if (key.includes('醫囑') || key.includes('處置') || key.includes('處方')) out.plan = val;
+    else if (key.includes('下次回診') || key.includes('回診')) out._nextVisitText = val;
+  }
+  // 解析下次回診日期（YYYY/MM/DD 或相對日期：三個月後 / 兩週後）
+  const nv = out._nextVisitText || '';
+  const m = nv.match(/(\d{4})[/\-年](\d{1,2})[/\-月](\d{1,2})/);
+  if (m) out.nextVisit = `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+  else if (/三個月|3 ?個月/.test(nv)) { const d = new Date(); d.setMonth(d.getMonth() + 3); out.nextVisit = d.toISOString().slice(0,10); }
+  else if (/兩個月|2 ?個月/.test(nv)) { const d = new Date(); d.setMonth(d.getMonth() + 2); out.nextVisit = d.toISOString().slice(0,10); }
+  else if (/一個月|1 ?個月/.test(nv)) { const d = new Date(); d.setMonth(d.getMonth() + 1); out.nextVisit = d.toISOString().slice(0,10); }
+  else if (/兩週|兩周|2 ?週|14 ?天/.test(nv)) { const d = new Date(); d.setDate(d.getDate() + 14); out.nextVisit = d.toISOString().slice(0,10); }
+  delete out._nextVisitText;
+  return out;
+}
+
+// AI 自動填寫提示 toast（短暫顯示後消失）
+function showDemoAutoFillToast(message) {
+  const existing = document.getElementById('demoAutoFillToast');
+  if (existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.id = 'demoAutoFillToast';
+  toast.style.cssText = 'position:fixed;top:calc(var(--demo-banner-h, 34px) + 12px);left:50%;transform:translateX(-50%);z-index:10002;background:#0e7490;color:white;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 4px 14px rgba(15,118,110,0.4);animation:demoFadeIn 0.3s ease-out;letter-spacing:0.5px;max-width:90vw;text-align:center;';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3500);
+}
+
 // 藥單疊圖（拍藥袋辨識體驗時顯示一張範例藥單）
 function showDemoPrescriptionOverlay() {
   if (document.getElementById('demoPrescriptionOverlay')) return;
@@ -2186,7 +2224,25 @@ function ConsultationForm({ item, onClose, lang }) {
           <div className="col-span-2"><Label>{t('department', lang)}</Label><Chips options={commonDepts} value={form.department} onChange={v => up('department', v || '')} className="mb-2" /><Input value={form.department} onChange={e => up('department', e.target.value)} /></div>
           <div className="col-span-2"><Label>{t('doctor', lang)}</Label><VoiceInput value={form.doctor} onChange={v => up('doctor', v)} /></div>
         </div>
-        <VoiceRecorder transcription={form.transcription} onTranscriptChange={tr => up('transcription', tr)} onSummaryGenerated={s => up('aiSummary', s)} patient={state.patients.find(p => p.id === state.currentPatientId)} meds={(state.medications[state.currentPatientId] || []).filter(m => m.active)} settings={state.settings} lang={lang} />
+        <VoiceRecorder transcription={form.transcription} onTranscriptChange={tr => up('transcription', tr)} onSummaryGenerated={s => {
+          // AI 摘要產生後：填入摘要文字、並從結構化內容自動填回主訴/診斷/醫囑/下次回診（只填空欄）
+          const fields = parseAISummaryToFields(s);
+          const isDemo = typeof DEMO_MODE !== 'undefined' && DEMO_MODE;
+          // DEMO 模式：主訴沒有從 AI 摘要拿，但根據範例情境給合理預設
+          const demoChiefComplaint = isDemo ? '近一個月記憶力下降，重複問同樣問題，偶爾找不到回家的路' : '';
+          setForm(f => {
+            const filled = [];
+            const next = { ...f, aiSummary: s };
+            if (!f.chiefComplaint && demoChiefComplaint) { next.chiefComplaint = demoChiefComplaint; filled.push('主訴'); }
+            if (!f.diagnosis && fields.diagnosis) { next.diagnosis = fields.diagnosis; filled.push('診斷'); }
+            if (!f.plan && fields.plan) { next.plan = fields.plan; filled.push('醫囑/處置'); }
+            if (!f.nextVisit && fields.nextVisit) { next.nextVisit = fields.nextVisit; filled.push('下次回診'); }
+            if (filled.length > 0 && typeof showDemoAutoFillToast === 'function') {
+              showDemoAutoFillToast('AI 已自動填寫：' + filled.join('、'));
+            }
+            return next;
+          });
+        }} patient={state.patients.find(p => p.id === state.currentPatientId)} meds={(state.medications[state.currentPatientId] || []).filter(m => m.active)} settings={state.settings} lang={lang} />
         {form.aiSummary && (
           <div>
             <Label>{t('aiSummary', lang)}</Label>
